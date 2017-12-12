@@ -1,0 +1,320 @@
+---
+title: "R Machine Learning in Air Quality Science"
+output: github_document
+---
+
+Ben Fasoli  
+Last Updated: `r Sys.Date()`
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = F, message = F)
+```
+
+# Introduction
+
+I developed this tutorial as an excuse to play with a really interesting dataset and demonstrate a workflow for others with similar projects. I don't claim to be an expert and this document was as much for my benefit as yours.
+
+## The dataset
+
+Measurements were made at the William Browning Building at the University of Utah. A number of tracers were sampled including $\text{CO}_2$, $\text{CH}_4$, $\text{O}_3$, $\text{CO}$, $\text{NO}_x$, $\text{NO}$, $\text{NO}_2$, $\text{PM}_{2.5}$ (MC), $\delta_{13}C$, and $\delta_{18}O$. We also include wind speed as well as valley heat deficit as proxies for meteorological conditions. These are all represented as continuous variables.
+
+Let's load the package dependencies and data. The data is compressed in a serialized object for use in R (.rds) and contains a data frame of observations.
+
+```{r}
+library(tidyverse)
+library(uataq)
+
+wbb <- readRDS('wbb_aggregated.rds')
+str(wbb)
+```
+
+Let's look at the distributions within the variables.
+
+```{r}
+wbb %>%
+  select(-Time) %>%
+  gather(key, value) %>%
+  na.omit() %>%
+  ggplot(aes(x = value)) +
+  geom_density() +
+  facet_wrap(~ key, scales = 'free') +
+  labs(x = NULL, y = NULL) +
+  theme_classic()
+```
+
+From this, we can see
+
+1. Many variables have a "background" signal represented by a minimum value (or maximum for negative values such as `d13CVPDB`).
+1. We will need to standardize the scale between variables to remove the background signal and prevent some variables to be more heavily weighted in various models.
+1. Many of the species densities show the maximum density near the background signal.
+1. Many of the species densities show a secondary maxima at higher atmospheric concentrations.
+
+
+## Valley Heat Deficit
+
+Valley heat deficit (VHD) is a thermodynamic quantity that acts as a proxy for atmospheric stability within the valley. In the Salt Lake Valley, a valley heat deficit of $4\ \text{MJ}\ \text{m}^{-2}$ indicates a persistent cold air pool (PCAP) event, during which time the atmospheric concentrations of many measured air quality species often increase. We will add a new column to our data isolating these periods of time and cumulatively summing the VHD values while they are over this threshold to provide an independent estimate of the duration and strength of the PCAP event.
+
+```{r}
+# New column pcap for the vhd values > 4
+wbb$pcap <- with(wbb, ifelse(vhd > 4, vhd, 0))
+
+# Run length encoding to group sequential non-na pcap values
+run <- with(wbb, rle(pcap > 0))
+run$values <- 1:length(run$values)
+wbb$pcap_group <- inverse.rle(run)
+
+# Cumulatively sum vhd values in the pcap column for each pcap_group
+wbb <- wbb %>%
+  group_by(pcap_group) %>%
+  mutate(pcap = cumsum(pcap)) %>%
+  ungroup()
+
+# Drop our grouping column
+wbb$pcap_group <- NULL
+```
+
+`wbb$pcap` now represents the cumulative sum of VHD within groups of VHD > 4.
+
+
+## Final cleaning
+
+Lastly, there is missing data in the dataset due to instrument outages or long sampling intervals. For our purposes, we will fill the missing values by interpolating over the missing periods. We remove outages that cannot be reliably interpolated (e.g. the beginning or end of our dataset).
+
+```{r}
+# Interpolate NA values with uataq::na_interp()
+wbb <- wbb %>%
+  mutate_all(na_interp, x = wbb$Time) %>%
+  na.omit()
+
+# Standardize independent variables and convert back to a data frame
+scale_mask <- !colnames(wbb) %in% c('Time', 'MC')
+scaling_matrix <- scale(wbb[, scale_mask])
+wbb[, scale_mask] <- data.frame(scaling_matrix)
+str(wbb)
+```
+
+
+# Modeling
+
+Let's test some models. Ultimately, the goal is to predict the $\text{PM}_{2.5}$ mass concentration (MC) as this is the largest health consideration during these events. We need to split our dataset into training and testing subsets to validate the model results. The `boot` package contains many functions for [bootstrapping](https://en.wikipedia.org/wiki/Bootstrapping_(statistics)) and [k-fold cross validation](https://en.wikipedia.org/wiki/Cross-validation_(statistics)#k-fold_cross-validation) that are useful for estimating confidence intervals, optimizing the [bias-variance tradeoff](https://en.wikipedia.org/wiki/Bias–variance_tradeoff), and prevent overfitting of the model.
+
+
+## Training dataset
+
+To train our models, we will want to remove the time of the observations and standardize the tracers that we will use as independent variables for the model.
+
+```{r}
+# Set random seed for results to be reproducible
+set.seed(1962)
+idx <- sample.int(nrow(wbb), floor(0.8 * nrow(wbb)))
+
+# Subset the WBB dataset to produce training and evaluation data
+train <- wbb[idx, ]
+test <- wbb[-idx, ]
+
+# Remove time as an independent variable in model training
+train$Time <- NULL
+```
+
+
+## Generalized linear model
+
+Generalized linear models are extensions of ordinary linear regression, introducing a link function that enables the response variable to have an error distribution that does not follow a normal distribution. In our case, we will assume the error to follow a gaussian distribution similar to an ordinary linear regression.
+
+We use k-fold cross validation to ensure that the model is generalized for predicting data outside of the training dataset. k-fold cross validation splits the dataset into $k$ equally sized subsets (folds). $k-1$ subsets are then used to repeatedly train the model and evaluate the results using the remaining subset. These results can tell us the predictive power of our model.
+
+```{r}
+mod_glm <- glm(MC ~ ., data = train)
+summary(mod_glm)
+```
+
+We extract the cross-validation estimate for the total prediction error and calculate the [root mean square error (RMSE)](https://en.wikipedia.org/wiki/Root-mean-square_deviation), which is a measure of how far off our model is.
+
+```{r}
+library(boot)
+cv_glm <- cv.glm(train, mod_glm, K = 6)
+str(cv_glm)
+
+# The second component of cv_glm$delta gives the adjusted cross-validation error estimate
+glm_rmse <- sqrt(cv_glm$delta[2])
+glm_rmse
+
+# Similarly we can use the model residuals to calculate RMSE
+pred_glm <- predict(mod_glm)
+sqrt(mean((train$MC - pred_glm)^2))
+```
+
+We can get a (very) rough estimate of the importance of each variable using the $p$ values on the regression coefficients.
+
+```{r}
+importance_glm <- summary(mod_glm)$coefficients[ ,'Pr(>|t|)'] %>%
+  (function(x) data_frame(Feature = names(x), P = x)) %>%
+  filter(Feature != '(Intercept)') %>%
+  mutate(lP = -log10(P))
+ggplot(data = importance_glm, aes(x = Feature, y = lP, fill = lP)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(limits = arrange(importance_glm, lP)$Feature) +
+  scale_fill_gradientn(colors = c('blue', 'cyan', 'green', 'yellow', 'orange', 'red'),
+                       guide = F) +
+  coord_flip() +
+  labs(x = NULL, y = '-log10(p)', title = 'GLM Variable Significance') +
+  theme_classic()
+```
+
+
+## Random forest
+
+Decision trees are a popular method for predictive modeling and solving classification problems but can be applied to predict continuous variables as well. While decision trees are easy to interpret/visualize and fast to compute, they often prone to overfitting as the tree grows larger.
+
+Random forests are constructed by growing a forest (ensemble) of independent classification and regression trees. These trees allow us to minimize error due to bias and variance by calculating a large number of trees, limiting overoverfitting by not depending on any individual tree and reducing bias and variance errors. Trees are grown by varying the subset of the data used to train the model and by reducing the number of independent variables given to any individual tree, forcing each tree to solve a unique and varying problem. Summarizations of the forest can be used to give us a more robust result than a single decision tree.
+
+```{r}
+library(randomForest)
+
+mod_rf <- randomForest(MC ~ ., data = train, ntree = 1000, importance = T)
+```
+
+Random forests allow us to easily examine the importance of each independent variable on the dependent variable in the model. The model provides percent increase in mean squared error (MSE) as a result of permuting each independent variable. Thus, the variables that have the largest impact on the model have the largest percent increase in MSE.
+
+```{r}
+importance_rf <- data_frame(Feature = rownames(importance(mod_rf)),
+                            PctIncMSE = importance(mod_rf)[, 1])
+ggplot(importance_rf, aes(x = Feature, y = PctIncMSE, fill = PctIncMSE)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(limits = arrange(importance_rf, PctIncMSE)$Feature) +
+  scale_fill_gradientn(colors = c('blue', 'cyan', 'green', 'yellow', 'orange', 'red'), 
+                       guide = F) +
+  coord_flip() +
+  labs(x = NULL, y = '% Increase MSE', title = 'Random Forest Variable Importance') +
+  theme_classic()
+```
+
+In random forests, there is no need for cross-validation to estimate model error. Trees provide the [out of bag (OOB)](https://en.wikipedia.org/wiki/Out-of-bag_error) error estimate as a metric to evaluate the model. We can calculate the RMSE using the residuals from the model.
+
+```{r}
+pred_rf <- predict(mod_rf)
+sqrt(mean((train$MC - pred_rf)^2))
+```
+
+Alternatively, `randomForest` gives us the MSE of each tree. We can get a rough estimate for RMSE using the mean of the tree MSE values.
+
+```{r}
+rf_rmse <- mean(sqrt(mod_rf$mse))
+rf_rmse
+```
+
+
+## Gradient boosting
+
+Gradient boosting is a method of starting with a "weak learner", or an estimate of the model result that is only slightly better than random chance (e.g. mean, decision tree, regression), and improving on it until a loss function (often the mean squared error) is optimized. [Boosting](https://en.wikipedia.org/wiki/Boosting_(machine_learning)) is the idea of combining an ensemble of weak learners to create a single strong learner. [Gradient descent](https://en.wikipedia.org/wiki/Gradient_descent) uses an interatively improved model to minimize the loss function. 
+
+Gradient boosting is an ensemble method that iteratively combines weak learners into a single strong learner. In other words, it combines multiple inferior models to produce a robust result. At each iteration, a new model is calculated to best account for the residuals from the previous model. Each new model seeks to correct the error in the previous model. Imagine a random forest as above but now we grow the trees one at a time. When a tree finishes growing, a new tree starts and tries to minimize the total error in the forest. 
+
+Generally, gradient boosting
+
+1. Fits a model to the training data.
+1. Calculates the residuals of the fitted model.
+1. Fits a new model to the residuals and add this new model to the existing model (possibly with a weighting function).
+1. Return to step 2.
+
+The [extreme gradient boosting](https://github.com/dmlc/xgboost) implementation consistently wins data science and machine learning competitions (over half of the winning solutions on Kaggle) and has frameworks available for R and Python (among many others). 
+
+```{r warning=FALSE}
+library(xgboost)
+
+dtrain <- xgb.DMatrix(as.matrix(select(train, -MC)), label = train$MC)
+dtest <- xgb.DMatrix(as.matrix(select(test, -MC, -Time)), label = test$MC)
+
+param <- list(objective = 'reg:linear', max_depth = 6, nthread = 4)
+```
+
+`xgboost` includes methods for cross validation of the model which is useful for deciding how many rounds the model needs to iterate to minimize the error. By monitoring the RMSE of the test folds for each iteration, we can tell the model to stop after several rounds during which we haven't seen any improvement.
+
+```{r}
+xgb_cv <- xgb.cv(param, dtrain, nrounds = 1000,
+                 early_stopping_rounds = 10, nfold = 6, verbose = F)
+xgb_cv
+```
+
+
+
+```{r warning=FALSE}
+mod_gb <- xgb.train(param, dtrain, nrounds = xgb_cv$best_ntreelimit)
+
+importance_gb <- xgb.importance(colnames(dtrain), mod_gb, as.matrix(select(train, -MC)),
+                                label = train$MC)
+importance_gb_sum <- importance_gb %>%
+  group_by(Feature) %>%
+  summarize_all(funs(sum(as.numeric(.), na.rm = T)))
+ggplot(data = importance_gb_sum, aes(x = Feature, y = Gain, fill = Gain)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(limits = arrange(importance_gb_sum, Gain)$Feature) +
+  scale_fill_gradientn(colors = c('blue', 'cyan', 'green', 'yellow', 'orange', 'red'),
+                       guide = F) +
+  coord_flip() +
+  labs(x = NULL, y = 'Total Gain', title = 'Gradient Boosting Variable Importance') +
+  theme_classic()
+```
+
+Similar to the first two models, we can try to calculate the RMSE of the residuals.
+
+```{r}
+pred_gb <- predict(mod_gb, dtrain)
+sqrt(mean((train$MC - pred_gb)^2))
+```
+
+While this number looks small, it is not a good estimate for uncertainty in the predictive power of the model since the model is likely overfit to the training data. The RMSE of the cross validation test folds provide the best estimate of predictive uncertainty at this point.
+
+
+# Model evaluation
+
+Up to now, we have both trained and evaluated our model using the training dataset. While we are able to estimate the model error using robust methods such as k-fold cross validation, evaluating our separate test dataset allows us to validate our uncertainty estimates. To do this, we need to execute our models on our test dataset.
+
+```{r}
+test$GLM <- predict(mod_glm, test)
+test$`Random Forest` <- predict(mod_rf, test)
+test$`Gradient Boosting` <- predict(mod_gb, dtest)
+
+# Calculate model summary statistics
+fit_glm <- lm(MC ~ GLM, data = test)
+fit_rf <- lm(MC ~ `Random Forest`, data = test)
+fit_gb <- lm(MC ~ `Gradient Boosting`, data = test)
+
+rmse <- function(mod) {sqrt(mean(resid(mod)^2))}
+fit_stats <- rbind(r.squared = c(glm = summary(fit_glm)$r.squared,
+                                 rf = summary(fit_rf)$r.squared,
+                                 gb = summary(fit_gb)$r.squared),
+                   rmse = c(rmse(fit_glm),
+                            rmse(fit_rf),
+                            rmse(fit_gb))) %>%
+  round(2)
+fit_stats
+
+test %>%
+  select(Time, Observed = MC, GLM, 'Random Forest', 'Gradient Boosting') %>%
+  gather(key, value, -Time) %>%
+  ggplot(aes(x = Time, y = value, color = key)) +
+  geom_line(alpha = 0.5) +
+  geom_point(alpha = 0.5) +
+  labs(x = NULL, y = expression(PM[2.5]), title = 'Model Comparison Timeseries', 
+       color = NULL) +
+  theme_classic()
+
+test %>%
+  select(MC, GLM, 'Random Forest', 'Gradient Boosting') %>%
+  gather(key, value, -MC) %>%
+  ggplot(aes(x = MC, y = value, color = key)) +
+  geom_abline(slope = 1, intercept = 0) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = 'lm', fill = NA) +
+  labs(x = 'Observed', y = 'Modeled', title = 'Model Comparison', color = NULL) +
+  theme_classic()
+```
+
+
+# Final thoughts
+
+1. Random forests and gradient boosting perform similarly well. The GLM produced a mean error 36% higher than both learning methods.
+1. The `pcap` variable is more heavily weighted in the random forest and gradient boosted models.
+1. All models agree on the importance of $\text{CH}_4$, $\text{O}_3$, and $\delta_{13}C$.
+1. `xgboost` requires more knob turning than random forests and could likely be tuned to improve results. Using the booster set to `gbtree` produces better results but runs much slower than `gblinear`. Increasing tree depth strongly overfits the model to the training data but does not extend well to the test data.

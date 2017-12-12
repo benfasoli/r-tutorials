@@ -2,6 +2,7 @@ R Machine Learning in Air Quality Science
 ================
 
 Ben Fasoli
+
 Last Updated: 2017-12-11
 
 Introduction
@@ -159,14 +160,14 @@ mod_glm <- glm(MC ~ ., data = train)
 summary(mod_glm)
 ```
 
-    ## 
+    ##
     ## Call:
     ## glm(formula = MC ~ ., data = train)
-    ## 
-    ## Deviance Residuals: 
+    ##
+    ## Deviance Residuals:
     ##      Min        1Q    Median        3Q       Max  
     ## -24.5725   -4.1444   -0.3602    4.1743   23.1556  
-    ## 
+    ##
     ## Coefficients:
     ##               Estimate Std. Error t value Pr(>|t|)    
     ## (Intercept)   16.37496    0.21840  74.976  < 2e-16 ***
@@ -174,9 +175,9 @@ summary(mod_glm)
     ## CH4_ppm        4.49366    0.45648   9.844  < 2e-16 ***
     ## O3_ppb         5.20510    0.67769   7.681 3.88e-14 ***
     ## CO_ppb         2.56509    0.57302   4.476 8.50e-06 ***
-    ## NOX_ppb     -284.00493   91.10705  -3.117 0.001879 ** 
-    ## NO_ppb       149.16587   49.47784   3.015 0.002639 ** 
-    ## NO2_ppb      163.72969   52.29741   3.131 0.001796 ** 
+    ## NOX_ppb     -284.00493   91.10705  -3.117 0.001879 **
+    ## NO_ppb       149.16587   49.47784   3.015 0.002639 **
+    ## NO2_ppb      163.72969   52.29741   3.131 0.001796 **
     ## d13CVPDB      -3.40983    0.50262  -6.784 2.03e-11 ***
     ## d18OVSMOW     -0.03452    0.49056  -0.070 0.943919    
     ## vhd            5.64520    0.39775  14.193  < 2e-16 ***
@@ -184,13 +185,13 @@ summary(mod_glm)
     ## pcap           1.44829    0.37086   3.905 0.000101 ***
     ## ---
     ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-    ## 
+    ##
     ## (Dispersion parameter for gaussian family taken to be 46.58536)
-    ## 
+    ##
     ##     Null deviance: 260100  on 977  degrees of freedom
     ## Residual deviance:  44955  on 965  degrees of freedom
     ## AIC: 6547.1
-    ## 
+    ##
     ## Number of Fisher Scoring iterations: 2
 
 We extract the cross-validation estimate for the total prediction error and calculate the [root mean square error (RMSE)](https://en.wikipedia.org/wiki/Root-mean-square_deviation), which is a measure of how far off our model is.
@@ -263,7 +264,7 @@ importance_rf <- data_frame(Feature = rownames(importance(mod_rf)),
 ggplot(importance_rf, aes(x = Feature, y = PctIncMSE, fill = PctIncMSE)) +
   geom_bar(stat = 'identity') +
   scale_x_discrete(limits = arrange(importance_rf, PctIncMSE)$Feature) +
-  scale_fill_gradientn(colors = c('blue', 'cyan', 'green', 'yellow', 'orange', 'red'), 
+  scale_fill_gradientn(colors = c('blue', 'cyan', 'green', 'yellow', 'orange', 'red'),
                        guide = F) +
   coord_flip() +
   labs(x = NULL, y = '% Increase MSE', title = 'Random Forest Variable Importance') +
@@ -434,7 +435,7 @@ test %>%
   ggplot(aes(x = Time, y = value, color = key)) +
   geom_line(alpha = 0.5) +
   geom_point(alpha = 0.5) +
-  labs(x = NULL, y = expression(PM[2.5]), title = 'Model Comparison Timeseries', 
+  labs(x = NULL, y = expression(PM[2.5]), title = 'Model Comparison Timeseries',
        color = NULL) +
   theme_classic()
 ```

@@ -4,6 +4,7 @@ output: github_document
 ---
 
 Ben Fasoli  
+
 Last Updated: `r Sys.Date()`
 
 ```{r setup, include=FALSE}
@@ -182,7 +183,7 @@ importance_rf <- data_frame(Feature = rownames(importance(mod_rf)),
 ggplot(importance_rf, aes(x = Feature, y = PctIncMSE, fill = PctIncMSE)) +
   geom_bar(stat = 'identity') +
   scale_x_discrete(limits = arrange(importance_rf, PctIncMSE)$Feature) +
-  scale_fill_gradientn(colors = c('blue', 'cyan', 'green', 'yellow', 'orange', 'red'), 
+  scale_fill_gradientn(colors = c('blue', 'cyan', 'green', 'yellow', 'orange', 'red'),
                        guide = F) +
   coord_flip() +
   labs(x = NULL, y = '% Increase MSE', title = 'Random Forest Variable Importance') +
@@ -206,9 +207,9 @@ rf_rmse
 
 ## Gradient boosting
 
-Gradient boosting is a method of starting with a "weak learner", or an estimate of the model result that is only slightly better than random chance (e.g. mean, decision tree, regression), and improving on it until a loss function (often the mean squared error) is optimized. [Boosting](https://en.wikipedia.org/wiki/Boosting_(machine_learning)) is the idea of combining an ensemble of weak learners to create a single strong learner. [Gradient descent](https://en.wikipedia.org/wiki/Gradient_descent) uses an interatively improved model to minimize the loss function. 
+Gradient boosting is a method of starting with a "weak learner", or an estimate of the model result that is only slightly better than random chance (e.g. mean, decision tree, regression), and improving on it until a loss function (often the mean squared error) is optimized. [Boosting](https://en.wikipedia.org/wiki/Boosting_(machine_learning)) is the idea of combining an ensemble of weak learners to create a single strong learner. [Gradient descent](https://en.wikipedia.org/wiki/Gradient_descent) uses an interatively improved model to minimize the loss function.
 
-Gradient boosting is an ensemble method that iteratively combines weak learners into a single strong learner. In other words, it combines multiple inferior models to produce a robust result. At each iteration, a new model is calculated to best account for the residuals from the previous model. Each new model seeks to correct the error in the previous model. Imagine a random forest as above but now we grow the trees one at a time. When a tree finishes growing, a new tree starts and tries to minimize the total error in the forest. 
+Gradient boosting is an ensemble method that iteratively combines weak learners into a single strong learner. In other words, it combines multiple inferior models to produce a robust result. At each iteration, a new model is calculated to best account for the residuals from the previous model. Each new model seeks to correct the error in the previous model. Imagine a random forest as above but now we grow the trees one at a time. When a tree finishes growing, a new tree starts and tries to minimize the total error in the forest.
 
 Generally, gradient boosting
 
@@ -217,7 +218,7 @@ Generally, gradient boosting
 1. Fits a new model to the residuals and add this new model to the existing model (possibly with a weighting function).
 1. Return to step 2.
 
-The [extreme gradient boosting](https://github.com/dmlc/xgboost) implementation consistently wins data science and machine learning competitions (over half of the winning solutions on Kaggle) and has frameworks available for R and Python (among many others). 
+The [extreme gradient boosting](https://github.com/dmlc/xgboost) implementation consistently wins data science and machine learning competitions (over half of the winning solutions on Kaggle) and has frameworks available for R and Python (among many others).
 
 ```{r warning=FALSE}
 library(xgboost)
@@ -296,7 +297,7 @@ test %>%
   ggplot(aes(x = Time, y = value, color = key)) +
   geom_line(alpha = 0.5) +
   geom_point(alpha = 0.5) +
-  labs(x = NULL, y = expression(PM[2.5]), title = 'Model Comparison Timeseries', 
+  labs(x = NULL, y = expression(PM[2.5]), title = 'Model Comparison Timeseries',
        color = NULL) +
   theme_classic()
 

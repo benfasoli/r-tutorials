@@ -209,7 +209,7 @@ rf_rmse
 
 Gradient boosting is a method of starting with a "weak learner", or an estimate of the model result that is only slightly better than random chance (e.g. mean, decision tree, regression), and improving on it until a loss function (often the mean squared error) is optimized. [Boosting](https://en.wikipedia.org/wiki/Boosting_(machine_learning)) is the idea of combining an ensemble of weak learners to create a single strong learner. [Gradient descent](https://en.wikipedia.org/wiki/Gradient_descent) uses an interatively improved model to minimize the loss function.
 
-Gradient boosting is an ensemble method that iteratively combines weak learners into a single strong learner. In other words, it combines multiple inferior models to produce a robust result. At each iteration, a new model is calculated to best account for the residuals from the previous model. Each new model seeks to correct the error in the previous model. Imagine a random forest as above but now we grow the trees one at a time. When a tree finishes growing, a new tree starts and tries to minimize the total error in the forest.
+Gradient boosting is an ensemble method that iteratively combines weak learners into a single strong learner. In other words, it combines multiple inferior models to produce a robust result. At each iteration, a new model is calculated to best account for the residuals from the previous model (somewhat similar to [principle component analysis](https://en.wikipedia.org/wiki/Principal_component_analysis) but without the constraint of orthogonality). Each new model seeks to correct the error in the previous model. Imagine a random forest as above but now we grow the trees one at a time. When a tree finishes growing, a new tree starts and tries to minimize the total error in the forest.
 
 Generally, gradient boosting
 
@@ -218,7 +218,7 @@ Generally, gradient boosting
 1. Fits a new model to the residuals and add this new model to the existing model (possibly with a weighting function).
 1. Return to step 2.
 
-The [extreme gradient boosting](https://github.com/dmlc/xgboost) implementation consistently wins data science and machine learning competitions (over half of the winning solutions on Kaggle) and has frameworks available for R and Python (among many others).
+The [extreme gradient boosting](https://github.com/dmlc/xgboost) implementation consistently wins data science and machine learning competitions (over half of the winning solutions on Kaggle) and has interfaces available for R and Python (among many others).
 
 ```{r warning=FALSE}
 library(xgboost)
@@ -267,6 +267,64 @@ sqrt(mean((train$MC - pred_gb)^2))
 While this number looks small, it is not a good estimate for uncertainty in the predictive power of the model since the model is likely overfit to the training data. The RMSE of the cross validation test folds provide the best estimate of predictive uncertainty at this point.
 
 
+## Neural Network
+
+[Neural networks](https://en.wikipedia.org/wiki/Artificial_neural_network) are a means of machine learning that are exceptionally popular in image processing and are becoming more utilized in predicting continuous variables. The technique is modeled loosely after the human brain and uses the concept of neurons or nodes to transmit information. These [deep learning](https://en.wikipedia.org/wiki/Deep_learning) techniques are well suited to [solving classification problems](https://en.wikipedia.org/wiki/Feature_learning) (*cow* or *not a cow*) due to their ability to model complex non-linear relationships. The learning framework is typically organized into a minimum of 3 layers.
+
+1. *Input layer* containing input data which presents a pattern for the neural network to be trained on
+1. *Hidden layer(s)* which contains neurons that interact with multiple neurons in the layer prior and after, transmitting data forward and weighting the importance of previous neurons to optimize a loss function. Typically multiple hidden layers are used (3-5 is fairly normal) with more layers used to solve more complex problems
+1. *Output layer* contains 
+
+Training a neural network modifies the weighting of how neurons interact with one another to optimize a loss function, such as the [mean squared error](https://en.wikipedia.org/wiki/Mean_squared_error).
+
+[H2O](https://www.h2o.ai) is a popular open-source machine learning platform for big-data analysis with interfaces available for R and Python (among many others). To apply this to our dataset, we need to initialize a H2O instance on our machine and convert the data frames into an object H2O knows how to work with.
+
+```{r}
+library(h2o)
+h2o.init()
+
+train_h2o <- as.h2o(train)
+test_h2o <- as.h2o(test[,setdiff(names(test), 'Time')])
+```
+
+We can then train a model using three hidden layers consisting of 100 neurons each and cross-validate the results using 5 folds. Epochs describe the number of times that the neural network is presented with the entire dataset and should be determined by optimizing the [bias-variance tradeoff](https://en.wikipedia.org/wiki/Bias–variance_tradeoff) and validated using methods such as k-fold cross validation. Increasing the number of epochs improves the fit to the training dataset at the risk of over-fitting the model to the training dataset.
+
+```{r}
+mod_nn <- h2o.deeplearning(x = setdiff(names(train), 'MC'),
+                           y = 'MC',
+                           training_frame = train_h2o,
+                           standardize = T,
+                           hidden = c(100, 100, 100),
+                           nfolds = 5,
+                           epochs = 600)
+
+mod_nn@model$cross_validation_metrics_summary
+```
+
+We can extract the variable importance derived from the weighting of the neurons.
+
+```{r}
+importance_nn <- h2o.varimp(mod_nn)
+ggplot(data = importance_nn, aes(x = variable, y = relative_importance, fill = relative_importance)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(limits = arrange(importance_nn, relative_importance)$variable) +
+  scale_fill_gradientn(colors = c('blue', 'cyan', 'green', 'yellow', 'orange', 'red'),
+                       guide = F) +
+  coord_flip() +
+  labs(x = NULL, y = 'Relative Importance', title = 'Neural Network Variable Importance') +
+  theme_classic()
+```
+
+Similar to the first two models, we can try to calculate the RMSE of the residuals.
+
+```{r}
+pred_nn <- as.vector(h2o.predict(mod_nn, 
+                                 as.h2o(train_h2o[,setdiff(names(train_h2o), 'Time')])))
+sqrt(mean((train$MC - pred_nn)^2))
+```
+
+Similar to the gradient boosting results, this number looks small but it is not a good estimate for uncertainty in the predictive power of the model since the model is likely overfit to the training data - the difference between this RMSE and the cross validation results is a clear indicator of this.
+
 # Model evaluation
 
 Up to now, we have both trained and evaluated our model using the training dataset. While we are able to estimate the model error using robust methods such as k-fold cross validation, evaluating our separate test dataset allows us to validate our uncertainty estimates. To do this, we need to execute our models on our test dataset.
@@ -275,24 +333,28 @@ Up to now, we have both trained and evaluated our model using the training datas
 test$GLM <- predict(mod_glm, test)
 test$`Random Forest` <- predict(mod_rf, test)
 test$`Gradient Boosting` <- predict(mod_gb, dtest)
+test$`Neural Network` <- as.vector(h2o.predict(mod_nn, test_h2o))
 
 # Calculate model summary statistics
 fit_glm <- lm(MC ~ GLM, data = test)
 fit_rf <- lm(MC ~ `Random Forest`, data = test)
 fit_gb <- lm(MC ~ `Gradient Boosting`, data = test)
+fit_nn <- lm(MC ~ `Neural Network`, data = test)
 
 rmse <- function(mod) {sqrt(mean(resid(mod)^2))}
 fit_stats <- rbind(r.squared = c(glm = summary(fit_glm)$r.squared,
                                  rf = summary(fit_rf)$r.squared,
-                                 gb = summary(fit_gb)$r.squared),
+                                 gb = summary(fit_gb)$r.squared,
+                                 nn = summary(fit_gb)$r.squared),
                    rmse = c(rmse(fit_glm),
                             rmse(fit_rf),
-                            rmse(fit_gb))) %>%
+                            rmse(fit_gb),
+                            rmse(fit_nn))) %>%
   round(2)
 fit_stats
 
 test %>%
-  select(Time, Observed = MC, GLM, 'Random Forest', 'Gradient Boosting') %>%
+  select(Time, Observed = MC, GLM, 'Random Forest', 'Gradient Boosting', 'Neural Network') %>%
   gather(key, value, -Time) %>%
   ggplot(aes(x = Time, y = value, color = key)) +
   geom_line(alpha = 0.5) +
@@ -302,7 +364,7 @@ test %>%
   theme_classic()
 
 test %>%
-  select(MC, GLM, 'Random Forest', 'Gradient Boosting') %>%
+  select(MC, GLM, 'Random Forest', 'Gradient Boosting', 'Neural Network') %>%
   gather(key, value, -MC) %>%
   ggplot(aes(x = MC, y = value, color = key)) +
   geom_abline(slope = 1, intercept = 0) +
@@ -310,12 +372,16 @@ test %>%
   geom_smooth(method = 'lm', fill = NA) +
   labs(x = 'Observed', y = 'Modeled', title = 'Model Comparison', color = NULL) +
   theme_classic()
+
+h2o.shutdown(F)
 ```
 
 
 # Final thoughts
 
-1. Random forests and gradient boosting perform similarly well. The GLM produced a mean error 36% higher than both learning methods.
+1. Random forests, gradient boosting, and neural networks perform similarly well. The GLM produced a mean error 36% higher than both learning methods.
 1. The `pcap` variable is more heavily weighted in the random forest and gradient boosted models.
-1. All models agree on the importance of $\text{CH}_4$, $\text{O}_3$, and $\delta_{13}C$.
-1. `xgboost` requires more knob turning than random forests and could likely be tuned to improve results. Using the booster set to `gbtree` produces better results but runs much slower than `gblinear`. Increasing tree depth strongly overfits the model to the training data but does not extend well to the test data.
+1. All models agree on the importance of $\text{CH}_4$, $\text{O}_3$.
+1. Gradient boosting and neural networks require more knob turning than random forests and could likely be tuned to improve results. 
+1. Using the booster set to `gbtree` produces better results but runs much slower than `gblinear`. Increasing tree depth strongly overfits the model to the training data but does not extend well to the test data.
+1. Using a higher number of epochs improves neural network results at the risk of overfitting to the training data.

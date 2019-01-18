@@ -3,7 +3,7 @@ R Machine Learning in Air Quality Science
 
 Ben Fasoli
 
-Last Updated: 2018-02-26
+Last Updated: 2019-01-17
 
 Introduction
 ============
@@ -122,8 +122,8 @@ str(wbb)
     ##  $ vhd      : num  1.36 1.3 1.25 1.19 1.1 ...
     ##  $ SPD      : num  -0.247 -0.132 -0.123 -0.485 -0.99 ...
     ##  $ pcap     : num  2.17 2.19 2.22 2.24 2.27 ...
-    ##  - attr(*, "na.action")=Class 'omit'  Named int [1:290] 1 2 3 4 5 6 7 8 9 10 ...
-    ##   .. ..- attr(*, "names")= chr [1:290] "1" "2" "3" "4" ...
+    ##  - attr(*, "na.action")= 'omit' Named int  1 2 3 4 5 6 7 8 9 10 ...
+    ##   ..- attr(*, "names")= chr  "1" "2" "3" "4" ...
 
 Modeling
 ========
@@ -228,7 +228,7 @@ We can get a (very) rough estimate of the importance of each variable using the 
 
 ``` r
 importance_glm <- summary(mod_glm)$coefficients[ ,'Pr(>|t|)'] %>%
-  (function(x) data_frame(Feature = names(x), P = x)) %>%
+  (function(x) tibble(Feature = names(x), P = x)) %>%
   filter(Feature != '(Intercept)') %>%
   mutate(lP = -log10(P))
 ggplot(data = importance_glm, aes(x = Feature, y = lP, fill = lP)) +
@@ -280,7 +280,7 @@ pred_rf <- predict(mod_rf)
 sqrt(mean((train$MC - pred_rf)^2))
 ```
 
-    ## [1] 4.356564
+    ## [1] 4.375994
 
 Alternatively, `randomForest` gives us the MSE of each tree. We can get a rough estimate for RMSE using the mean of the tree MSE values.
 
@@ -289,7 +289,7 @@ rf_rmse <- mean(sqrt(mod_rf$mse))
 rf_rmse
 ```
 
-    ## [1] 4.428228
+    ## [1] 4.415387
 
 Gradient boosting
 -----------------
@@ -325,53 +325,14 @@ xgb_cv
 ```
 
     ## ##### xgb.cv 6-folds
-    ##  iter train_rmse_mean train_rmse_std test_rmse_mean test_rmse_std
-    ##     1      16.5080575     0.22548421      16.539773     1.4325227
-    ##     2      12.0466475     0.16072269      12.322060     1.1327824
-    ##     3       8.9195657     0.11147316       9.483862     0.9668260
-    ##     4       6.7125742     0.07878720       7.620834     0.8093885
-    ##     5       5.1613318     0.05797445       6.433779     0.7030936
-    ##     6       4.0553660     0.04460947       5.680803     0.6076244
-    ##     7       3.2816393     0.04341231       5.235104     0.5297490
-    ##     8       2.7280642     0.04544028       4.956661     0.4851584
-    ##     9       2.3449802     0.03977735       4.798172     0.4031762
-    ##    10       2.0706257     0.03878046       4.673844     0.3788747
-    ##    11       1.8641720     0.04531771       4.624014     0.3583513
-    ##    12       1.7115550     0.04413918       4.585592     0.3487382
-    ##    13       1.5981678     0.04520150       4.566274     0.3486894
-    ##    14       1.5087275     0.04213684       4.543622     0.3353727
-    ##    15       1.4238298     0.04515882       4.534583     0.3308994
-    ##    16       1.3450183     0.03693433       4.524469     0.3329892
-    ##    17       1.2930720     0.03484655       4.501362     0.3215766
-    ##    18       1.2440070     0.04043959       4.493177     0.3141889
-    ##    19       1.2036827     0.04177300       4.489201     0.3113510
-    ##    20       1.1573513     0.04018572       4.498910     0.3058221
-    ##    21       1.1246838     0.04055412       4.495055     0.3028323
-    ##    22       1.0843688     0.02942511       4.491063     0.3051690
-    ##    23       1.0610838     0.03682016       4.485874     0.3041648
-    ##    24       1.0225462     0.03493065       4.477860     0.3105788
-    ##    25       0.9864282     0.04292524       4.477218     0.3086636
-    ##    26       0.9659263     0.02736162       4.475032     0.3095886
-    ##    27       0.9454995     0.03294494       4.475771     0.3102712
-    ##    28       0.9181233     0.02943689       4.476494     0.3123336
-    ##    29       0.8922917     0.03147040       4.478277     0.3059425
-    ##    30       0.8655203     0.02388055       4.480150     0.3094435
-    ##    31       0.8390323     0.02959707       4.479963     0.3078240
-    ##    32       0.8156343     0.03321757       4.481226     0.3060604
-    ##    33       0.7802553     0.04289646       4.484104     0.3104866
-    ##    34       0.7593177     0.03727413       4.487075     0.3121352
-    ##    35       0.7385563     0.03571268       4.487280     0.3136032
-    ##    36       0.7204992     0.03725858       4.489591     0.3113199
-    ##  iter train_rmse_mean train_rmse_std test_rmse_mean test_rmse_std
     ## Best iteration:
     ##  iter train_rmse_mean train_rmse_std test_rmse_mean test_rmse_std
-    ##    26       0.9659263     0.02736162       4.475032     0.3095886
+    ##    78       0.2214797      0.0111345       4.591353     0.2916373
 
 ``` r
 mod_gb <- xgb.train(param, dtrain, nrounds = xgb_cv$best_ntreelimit)
 
-importance_gb <- xgb.importance(colnames(dtrain), mod_gb, as.matrix(select(train, -MC)),
-                                label = train$MC)
+importance_gb <- xgb.importance(colnames(dtrain), mod_gb, label = train$MC)
 importance_gb_sum <- importance_gb %>%
   group_by(Feature) %>%
   summarize_all(funs(sum(as.numeric(.), na.rm = T)))
@@ -394,7 +355,7 @@ pred_gb <- predict(mod_gb, dtrain)
 sqrt(mean((train$MC - pred_gb)^2))
 ```
 
-    ## [1] 1.111908
+    ## [1] 0.3035958
 
 While this number looks small, it is not a good estimate for uncertainty in the predictive power of the model since the model is likely overfit to the training data. The RMSE of the cross validation test folds provide the best estimate of predictive uncertainty at this point.
 
@@ -409,7 +370,7 @@ Neural Network
 
 Training a neural network modifies the weighting of how neurons interact with one another to optimize a loss function, such as the [mean squared error](https://en.wikipedia.org/wiki/Mean_squared_error).
 
-[H2O](https://www.h2o.ai) is a popular open-source machine learning platform for big-data analysis with interfaces available for R and Python (among many others). To apply this to our dataset, we need to initialize a H2O instance on our machine and convert the data frames into an object H2O knows how to work with.
+[H2O](https://www.h2o.ai) is one option for an open-source machine learning platform for big-data analysis with interfaces available for R and Python (among many others). To apply this to our dataset, we need to initialize a H2O instance on our machine and convert the data frames into an object H2O knows how to work with.
 
 ``` r
 library(h2o)
@@ -420,38 +381,34 @@ h2o.init()
     ## H2O is not running yet, starting it now...
     ## 
     ## Note:  In case of errors look at the following log files:
-    ##     /tmp/RtmpulA4Kj/h2o_benfasoli_started_from_r.out
-    ##     /tmp/RtmpulA4Kj/h2o_benfasoli_started_from_r.err
+    ##     /var/folders/84/yzlbrw2s0pq_mh2n2csskwcc0000gn/T//RtmpsW9N90/h2o_benfasoli_started_from_r.out
+    ##     /var/folders/84/yzlbrw2s0pq_mh2n2csskwcc0000gn/T//RtmpsW9N90/h2o_benfasoli_started_from_r.err
     ## 
     ## 
-    ## Starting H2O JVM and connecting: . Connection successful!
+    ## Starting H2O JVM and connecting: .. Connection successful!
     ## 
     ## R is connected to the H2O cluster: 
-    ##     H2O cluster uptime:         1 seconds 622 milliseconds 
-    ##     H2O cluster version:        3.16.0.2 
-    ##     H2O cluster version age:    2 months and 26 days  
-    ##     H2O cluster name:           H2O_started_from_R_benfasoli_gbj512 
+    ##     H2O cluster uptime:         1 seconds 869 milliseconds 
+    ##     H2O cluster timezone:       America/Denver 
+    ##     H2O data parsing timezone:  UTC 
+    ##     H2O cluster version:        3.22.1.1 
+    ##     H2O cluster version age:    20 days  
+    ##     H2O cluster name:           H2O_started_from_R_benfasoli_abj299 
     ##     H2O cluster total nodes:    1 
-    ##     H2O cluster total memory:   6.94 GB 
-    ##     H2O cluster total cores:    4 
-    ##     H2O cluster allowed cores:  4 
+    ##     H2O cluster total memory:   4.00 GB 
+    ##     H2O cluster total cores:    8 
+    ##     H2O cluster allowed cores:  8 
     ##     H2O cluster healthy:        TRUE 
     ##     H2O Connection ip:          localhost 
     ##     H2O Connection port:        54321 
     ##     H2O Connection proxy:       NA 
     ##     H2O Internal Security:      FALSE 
-    ##     H2O API Extensions:         AutoML, XGBoost, Algos, Core V3, Core V4 
-    ##     R Version:                  R version 3.4.3 (2017-11-30)
+    ##     H2O API Extensions:         XGBoost, Algos, AutoML, Core V3, Core V4 
+    ##     R Version:                  R version 3.5.0 (2018-04-23)
 
 ``` r
 train_h2o <- as.h2o(train)
 ```
-
-    ## 
-      |                                                                       
-      |                                                                 |   0%
-      |                                                                       
-      |=================================================================| 100%
 
 ``` r
 test_h2o <- as.h2o(test[,setdiff(names(test), 'Time')])
@@ -475,233 +432,27 @@ mod_nn <- h2o.deeplearning(x = setdiff(names(train), 'MC'),
                            epochs = 600)
 ```
 
-    ## 
-      |                                                                       
-      |                                                                 |   0%
-      |                                                                       
-      |=                                                                |   1%
-      |                                                                       
-      |=                                                                |   2%
-      |                                                                       
-      |==                                                               |   3%
-      |                                                                       
-      |===                                                              |   4%
-      |                                                                       
-      |===                                                              |   5%
-      |                                                                       
-      |====                                                             |   6%
-      |                                                                       
-      |====                                                             |   7%
-      |                                                                       
-      |=====                                                            |   8%
-      |                                                                       
-      |======                                                           |   9%
-      |                                                                       
-      |======                                                           |  10%
-      |                                                                       
-      |=======                                                          |  11%
-      |                                                                       
-      |========                                                         |  12%
-      |                                                                       
-      |========                                                         |  13%
-      |                                                                       
-      |=========                                                        |  13%
-      |                                                                       
-      |==========                                                       |  15%
-      |                                                                       
-      |==========                                                       |  16%
-      |                                                                       
-      |===========                                                      |  17%
-      |                                                                       
-      |============                                                     |  18%
-      |                                                                       
-      |============                                                     |  19%
-      |                                                                       
-      |=============                                                    |  20%
-      |                                                                       
-      |==============                                                   |  21%
-      |                                                                       
-      |==============                                                   |  22%
-      |                                                                       
-      |===============                                                  |  23%
-      |                                                                       
-      |================                                                 |  24%
-      |                                                                       
-      |================                                                 |  25%
-      |                                                                       
-      |=================                                                |  26%
-      |                                                                       
-      |==================                                               |  27%
-      |                                                                       
-      |===================                                              |  29%
-      |                                                                       
-      |====================                                             |  30%
-      |                                                                       
-      |====================                                             |  31%
-      |                                                                       
-      |=====================                                            |  32%
-      |                                                                       
-      |=====================                                            |  33%
-      |                                                                       
-      |======================                                           |  34%
-      |                                                                       
-      |=======================                                          |  35%
-      |                                                                       
-      |========================                                         |  36%
-      |                                                                       
-      |========================                                         |  37%
-      |                                                                       
-      |=========================                                        |  38%
-      |                                                                       
-      |==========================                                       |  40%
-      |                                                                       
-      |==========================                                       |  41%
-      |                                                                       
-      |===========================                                      |  41%
-      |                                                                       
-      |============================                                     |  42%
-      |                                                                       
-      |============================                                     |  43%
-      |                                                                       
-      |=============================                                    |  44%
-      |                                                                       
-      |=============================                                    |  45%
-      |                                                                       
-      |==============================                                   |  46%
-      |                                                                       
-      |===============================                                  |  47%
-      |                                                                       
-      |===============================                                  |  48%
-      |                                                                       
-      |================================                                 |  49%
-      |                                                                       
-      |=================================                                |  50%
-      |                                                                       
-      |==================================                               |  52%
-      |                                                                       
-      |===================================                              |  53%
-      |                                                                       
-      |===================================                              |  54%
-      |                                                                       
-      |====================================                             |  56%
-      |                                                                       
-      |=====================================                            |  56%
-      |                                                                       
-      |=====================================                            |  57%
-      |                                                                       
-      |======================================                           |  58%
-      |                                                                       
-      |======================================                           |  59%
-      |                                                                       
-      |=======================================                          |  60%
-      |                                                                       
-      |========================================                         |  61%
-      |                                                                       
-      |========================================                         |  62%
-      |                                                                       
-      |=========================================                        |  63%
-      |                                                                       
-      |=========================================                        |  64%
-      |                                                                       
-      |==========================================                       |  64%
-      |                                                                       
-      |==========================================                       |  65%
-      |                                                                       
-      |===========================================                      |  66%
-      |                                                                       
-      |===========================================                      |  67%
-      |                                                                       
-      |============================================                     |  68%
-      |                                                                       
-      |=============================================                    |  69%
-      |                                                                       
-      |=============================================                    |  70%
-      |                                                                       
-      |==============================================                   |  70%
-      |                                                                       
-      |==============================================                   |  71%
-      |                                                                       
-      |===============================================                  |  72%
-      |                                                                       
-      |===============================================                  |  73%
-      |                                                                       
-      |================================================                 |  74%
-      |                                                                       
-      |=================================================                |  75%
-      |                                                                       
-      |=================================================                |  76%
-      |                                                                       
-      |==================================================               |  77%
-      |                                                                       
-      |===================================================              |  78%
-      |                                                                       
-      |===================================================              |  79%
-      |                                                                       
-      |====================================================             |  80%
-      |                                                                       
-      |====================================================             |  81%
-      |                                                                       
-      |=====================================================            |  82%
-      |                                                                       
-      |======================================================           |  83%
-      |                                                                       
-      |=======================================================          |  84%
-      |                                                                       
-      |=======================================================          |  85%
-      |                                                                       
-      |========================================================         |  86%
-      |                                                                       
-      |========================================================         |  87%
-      |                                                                       
-      |=========================================================        |  87%
-      |                                                                       
-      |=========================================================        |  88%
-      |                                                                       
-      |==========================================================       |  89%
-      |                                                                       
-      |==========================================================       |  90%
-      |                                                                       
-      |===========================================================      |  91%
-      |                                                                       
-      |============================================================     |  92%
-      |                                                                       
-      |============================================================     |  93%
-      |                                                                       
-      |=============================================================    |  94%
-      |                                                                       
-      |==============================================================   |  95%
-      |                                                                       
-      |==============================================================   |  96%
-      |                                                                       
-      |===============================================================  |  97%
-      |                                                                       
-      |================================================================ |  98%
-      |                                                                       
-      |=================================================================|  99%
-      |                                                                       
-      |=================================================================| 100%
-
 ``` r
 mod_nn@model$cross_validation_metrics_summary
 ```
 
     ## Cross-Validation Metrics Summary: 
     ##                              mean          sd cv_1_valid cv_2_valid
-    ## mae                     2.9652135   0.1518474  2.9929214  3.3231568
-    ## mean_residual_deviance  17.616713   2.1152892  18.150658  21.871523
-    ## mse                     17.616713   2.1152892  18.150658  21.871523
-    ## r2                      0.9324041  0.00905223  0.9150841 0.92179954
-    ## residual_deviance       17.616713   2.1152892  18.150658  21.871523
-    ## rmse                    4.1819043  0.25336832   4.260359     4.6767
-    ## rmsle                  0.35125268 0.015859269  0.3639317   0.376013
+    ## mae                     2.8583994   0.1841921    3.21148  2.9039912
+    ## mean_residual_deviance  17.088991   2.3158956  20.141016  21.211926
+    ## mse                     17.088991   2.3158956  20.141016  21.211926
+    ## r2                     0.93416053 0.010924311 0.92196685 0.92567587
+    ## residual_deviance       17.088991   2.3158956  20.141016  21.211926
+    ## rmse                    4.1142893   0.2842653  4.4878745   4.605641
+    ## rmsle                  0.34177107  0.03766269  0.4204903 0.34353063
     ##                        cv_3_valid cv_4_valid cv_5_valid
-    ## mae                     3.0075784   2.686818  2.8155932
-    ## mean_residual_deviance  19.479586 13.6729965  14.908802
-    ## mse                     19.479586 13.6729965  14.908802
-    ## r2                     0.93283045  0.9423629  0.9499435
-    ## residual_deviance       19.479586 13.6729965  14.908802
-    ## rmse                    4.4135685  3.6977015  3.8611917
-    ## rmsle                  0.32838485 0.33668113        NaN
+    ## mae                     2.8148837  2.4091954  2.9524467
+    ## mean_residual_deviance  15.134102  12.257007  16.700901
+    ## mse                     15.134102  12.257007  16.700901
+    ## r2                      0.9453153  0.9589592 0.91888547
+    ## residual_deviance       15.134102  12.257007  16.700901
+    ## rmse                    3.8902574   3.501001  4.0866737
+    ## rmsle                  0.32221976 0.25770402 0.36491072
 
 We can extract the variable importance derived from the weighting of the neurons.
 
@@ -722,21 +473,20 @@ ggplot(data = importance_nn, aes(x = variable, y = relative_importance, fill = r
 Similar to the first two models, we can try to calculate the RMSE of the residuals.
 
 ``` r
-pred_nn <- as.vector(h2o.predict(mod_nn, 
-                                 as.h2o(train_h2o[,setdiff(names(train_h2o), 'Time')])))
+pred_nn <- as.vector(
+  h2o.predict(
+    mod_nn, 
+    as.h2o(train_h2o[,setdiff(names(train_h2o), 'Time')]
+    )
+  )
+)
 ```
-
-    ## 
-      |                                                                       
-      |                                                                 |   0%
-      |                                                                       
-      |=================================================================| 100%
 
 ``` r
 sqrt(mean((train$MC - pred_nn)^2))
 ```
 
-    ## [1] 0.8400742
+    ## [1] 1.004842
 
 Similar to the gradient boosting results, this number looks small but it is not a good estimate for uncertainty in the predictive power of the model since the model is likely overfit to the training data - the difference between this RMSE and the cross validation results is a clear indicator of this.
 
@@ -752,11 +502,6 @@ test$`Gradient Boosting` <- predict(mod_gb, dtest)
 test$`Neural Network` <- as.vector(h2o.predict(mod_nn, test_h2o))
 ```
 
-    ## 
-      |                                                                       
-      |                                                                 |   0%
-      |                                                                       
-      |=================================================================| 100%
 
 ``` r
 # Calculate model summary statistics
@@ -780,11 +525,16 @@ fit_stats
 
     ##            glm   rf   gb   nn
     ## r.squared 0.79 0.89 0.89 0.89
-    ## rmse      6.61 4.86 4.85 4.37
+    ## rmse      6.61 4.85 4.84 4.20
 
 ``` r
 test %>%
-  select(Time, Observed = MC, GLM, 'Random Forest', 'Gradient Boosting', 'Neural Network') %>%
+  select(Time, 
+         Observed = MC, 
+         GLM, 
+         'Random Forest', 
+         'Gradient Boosting', 
+         'Neural Network') %>%
   gather(key, value, -Time) %>%
   ggplot(aes(x = Time, y = value, color = key)) +
   geom_line(alpha = 0.5) +
@@ -794,7 +544,7 @@ test %>%
   theme_classic()
 ```
 
-![](README_files/figure-markdown_github/unnamed-chunk-21-1.png)
+![](README_files/figure-markdown_github/unnamed-chunk-22-1.png)
 
 ``` r
 test %>%
@@ -808,7 +558,7 @@ test %>%
   theme_classic()
 ```
 
-![](README_files/figure-markdown_github/unnamed-chunk-21-2.png)
+![](README_files/figure-markdown_github/unnamed-chunk-22-2.png)
 
 ``` r
 h2o.shutdown(F)

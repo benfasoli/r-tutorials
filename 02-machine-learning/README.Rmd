@@ -149,7 +149,7 @@ We can get a (very) rough estimate of the importance of each variable using the 
 
 ```{r}
 importance_glm <- summary(mod_glm)$coefficients[ ,'Pr(>|t|)'] %>%
-  (function(x) data_frame(Feature = names(x), P = x)) %>%
+  (function(x) tibble(Feature = names(x), P = x)) %>%
   filter(Feature != '(Intercept)') %>%
   mutate(lP = -log10(P))
 ggplot(data = importance_glm, aes(x = Feature, y = lP, fill = lP)) +
@@ -242,8 +242,7 @@ xgb_cv
 ```{r warning=FALSE}
 mod_gb <- xgb.train(param, dtrain, nrounds = xgb_cv$best_ntreelimit)
 
-importance_gb <- xgb.importance(colnames(dtrain), mod_gb, as.matrix(select(train, -MC)),
-                                label = train$MC)
+importance_gb <- xgb.importance(colnames(dtrain), mod_gb, label = train$MC)
 importance_gb_sum <- importance_gb %>%
   group_by(Feature) %>%
   summarize_all(funs(sum(as.numeric(.), na.rm = T)))
@@ -277,7 +276,7 @@ While this number looks small, it is not a good estimate for uncertainty in the 
 
 Training a neural network modifies the weighting of how neurons interact with one another to optimize a loss function, such as the [mean squared error](https://en.wikipedia.org/wiki/Mean_squared_error).
 
-[H2O](https://www.h2o.ai) is a popular open-source machine learning platform for big-data analysis with interfaces available for R and Python (among many others). To apply this to our dataset, we need to initialize a H2O instance on our machine and convert the data frames into an object H2O knows how to work with.
+[H2O](https://www.h2o.ai) is one option for an open-source machine learning platform for big-data analysis with interfaces available for R and Python (among many others). To apply this to our dataset, we need to initialize a H2O instance on our machine and convert the data frames into an object H2O knows how to work with.
 
 ```{r}
 library(h2o)
@@ -318,8 +317,13 @@ ggplot(data = importance_nn, aes(x = variable, y = relative_importance, fill = r
 Similar to the first two models, we can try to calculate the RMSE of the residuals.
 
 ```{r}
-pred_nn <- as.vector(h2o.predict(mod_nn, 
-                                 as.h2o(train_h2o[,setdiff(names(train_h2o), 'Time')])))
+pred_nn <- as.vector(
+  h2o.predict(
+    mod_nn, 
+    as.h2o(train_h2o[,setdiff(names(train_h2o), 'Time')]
+    )
+  )
+)
 sqrt(mean((train$MC - pred_nn)^2))
 ```
 
@@ -352,9 +356,16 @@ fit_stats <- rbind(r.squared = c(glm = summary(fit_glm)$r.squared,
                             rmse(fit_nn))) %>%
   round(2)
 fit_stats
+```
 
+```{r}
 test %>%
-  select(Time, Observed = MC, GLM, 'Random Forest', 'Gradient Boosting', 'Neural Network') %>%
+  select(Time, 
+         Observed = MC, 
+         GLM, 
+         'Random Forest', 
+         'Gradient Boosting', 
+         'Neural Network') %>%
   gather(key, value, -Time) %>%
   ggplot(aes(x = Time, y = value, color = key)) +
   geom_line(alpha = 0.5) +
